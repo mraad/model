@@ -50,7 +50,7 @@ trainer:
     - class_path: lightning.pytorch.callbacks.LearningRateMonitor
       init_args:
         logging_interval: step
-    # - class_path: src.callbacks.LayerwiseFinetuning
+    # - class_path: claymodel.callbacks.LayerwiseFinetuning
     #   init_args:
     #     phase: 10
     #     train_bn: True
