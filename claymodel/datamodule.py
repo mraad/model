@@ -26,12 +26,19 @@ from torchvision.transforms import v2
 class EODataset(Dataset):
     """Reads different Earth Observation data sources from a directory."""
 
-    def __init__(
-        self, chips_path: list[Path], size: int, platforms: list, metadata: Box
+    def __init__(  # noqa: PLR0913
+        self,
+        chips_path: list[Path],
+        size: int,
+        platforms: list,
+        metadata: Box,
+        zero_meta_prob: float = 0.2,
     ) -> None:
         super().__init__()
         self.chips_path = chips_path
         self.size = size
+        # Training augmentation; 0 for inference so outputs don't change run to run.
+        self.zero_meta_prob = zero_meta_prob
         self.transforms = {}
 
         # Generate transforms for each platform using a helper function
@@ -78,8 +85,8 @@ class EODataset(Dataset):
                 np.hstack((chip["lat_norm"], chip["lon_norm"]), dtype=np.float32)
             )
 
-            # Randomly set time & latlon to zero for 20% of the chips
-            if random.random() < 0.2:  # noqa: PLR2004
+            # Randomly set time & latlon to zero (20% of chips in training, none in predict)
+            if random.random() < self.zero_meta_prob:
                 time_tensor.zero_()
                 latlon_tensor.zero_()
 
@@ -291,8 +298,10 @@ class ClayDataModule(L.LightningDataModule):
         elif stage == "predict":
             self.prd_ds = EODataset(
                 chips_path=chips_path,
-                platform=self.platform,
-                metadata_path=self.metadata_path,
+                size=self.size,
+                platforms=self.platforms,
+                metadata=self.metadata,
+                zero_meta_prob=0.0,
             )
 
     def train_dataloader(self):
@@ -316,10 +325,13 @@ class ClayDataModule(L.LightningDataModule):
         )
 
     def predict_dataloader(self):
+        # One .npz file per batch: a file already holds a batch of chips from one
+        # platform, and the model reads the platform from batch["platform"][0].
         return DataLoader(
             dataset=self.prd_ds,
-            batch_size=self.batch_size,
+            batch_size=1,
             num_workers=self.num_workers,
+            collate_fn=batch_collate,
             shuffle=False,
         )
 
