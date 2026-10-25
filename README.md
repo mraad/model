@@ -5,6 +5,10 @@
 
 An open source AI model and interface for Earth.
 
+> **Fork:** this is [mraad/model](https://github.com/mraad/model), upstream plus error fixes
+> (config path, predict stage, silent random-encoder loads, import errors, a destructive
+> data script, a figure leak, channel dropping in validation). See [FORK.md](FORK.md).
+
 ## License
 
 Clay Model is licensed under the [Apache](LICENSE). This applies to the source code as well as the trained model weights.
