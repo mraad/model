@@ -201,6 +201,57 @@ class IntermediatePredictionsTest(unittest.TestCase):
         self.assertEqual(plt.get_fignums(), [])
 
 
+class ChannelDropTest(unittest.TestCase):
+    def test_channels_dropped_in_training_only(self):  # E8
+        from box import Box
+
+        from claymodel import model as clay
+
+        class Teacher(torch.nn.Module):
+            num_features = 8
+
+        meta = Box(
+            {
+                "linz": {
+                    "gsd": 0.5,
+                    "bands": {"wavelength": {"r": 0.6, "g": 0.5, "b": 0.4}},
+                }
+            }
+        )
+        with mock.patch.object(clay.timm, "create_model", return_value=Teacher()):
+            mae = clay.clay_mae_tiny(
+                mask_ratio=0.75, patch_size=8, norm_pix_loss=False, shuffle=True,
+                metadata=meta, teacher="stub", dolls=[], doll_weights=[],
+            )  # fmt: skip
+        cube = {
+            "pixels": torch.ones(2, 3, 16, 16),
+            "time": torch.zeros(2, 4),
+            "latlon": torch.ones(2, 4),  # dropping only applies with known latlon
+            "platform": ["linz", "linz"],
+        }
+
+        def encoder_input(training):
+            mae.train(training)
+            seen = {}
+
+            def stop(datacube):
+                seen["pixels"] = datacube["pixels"]
+                raise StopIteration
+
+            with (
+                mock.patch.object(
+                    clay.random, "random", return_value=0.0
+                ),  # always drop
+                mock.patch.object(mae.encoder, "forward", side_effect=stop),
+                self.assertRaises(StopIteration),
+            ):
+                mae(cube)
+            return seen["pixels"]
+
+        self.assertTrue(bool((encoder_input(training=True) == 0).all()))
+        self.assertTrue(torch.equal(encoder_input(training=False), cube["pixels"]))
+
+
 class LoadEncoderWeightsTest(unittest.TestCase):
     """E3: a checkpoint without the encoder weights must fail, not train or embed
     with a random encoder."""

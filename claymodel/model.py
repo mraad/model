@@ -500,18 +500,20 @@ class ClayMAE(nn.Module):
         prob_drop_all = 0.10  # 10% probability to drop all channels
         prob_drop_half = 0.20  # 20% probability to drop half the channels
 
-        for i in range(batch_size):
-            if torch.any(
-                datacube["latlon"][i] != 0
-            ):  # Check if latlon is not all zeros
-                rand_val = random.random()
-                if rand_val < prob_drop_all:
-                    _pixels[i, :, :, :] = 0  # Drop all channels
-                elif rand_val < prob_drop_all + prob_drop_half:
-                    channel_indices = torch.randperm(channels)[
-                        : channels // 2
-                    ]  # Get 50% of channel indices
-                    _pixels[i, channel_indices, :, :] = 0  # Drop 50% of channels
+        # Training augmentation only: validation and inference see every channel.
+        if self.training:
+            for i in range(batch_size):
+                if torch.any(
+                    datacube["latlon"][i] != 0
+                ):  # Check if latlon is not all zeros
+                    rand_val = random.random()
+                    if rand_val < prob_drop_all:
+                        _pixels[i, :, :, :] = 0  # Drop all channels
+                    elif rand_val < prob_drop_all + prob_drop_half:
+                        channel_indices = torch.randperm(channels)[
+                            : channels // 2
+                        ]  # Get 50% of channel indices
+                        _pixels[i, channel_indices, :, :] = 0  # Drop 50% of channels
 
         # ENCODER
         (
