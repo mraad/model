@@ -63,6 +63,27 @@ class PackageImportTest(unittest.TestCase):
         )
         self.assertEqual(run.returncode, 0, run.stderr[-2000:])
 
+    def test_core_imports_without_finetune_extra(self):  # E5
+        # None in sys.modules makes `import torchgeo` fail like a missing package.
+        code = (
+            "import sys; sys.modules['torchgeo'] = sys.modules['segmentation_models_pytorch'] = None\n"
+            "import claymodel.datamodule, claymodel.finetune\n"
+            "from claymodel.finetune.embedder.factory import Embedder\n"
+            "try:\n"
+            "    import claymodel.finetune.classify.eurosat_datamodule\n"
+            "except ImportError as e:\n"
+            "    print('missing:', e.name)\n"
+        )
+        run = subprocess.run(
+            [sys.executable, "-c", code],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(run.returncode, 0, run.stderr[-2000:])
+        self.assertIn("missing: torchgeo", run.stdout)
+
 
 class PredictTest(unittest.TestCase):
     def test_predict_batches_one_platform_without_metadata_dropout(self):  # E2

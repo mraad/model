@@ -33,6 +33,10 @@ dependencies = [
     "wandb"
 ]
 
+[project.optional-dependencies]
+# classify (EuroSAT via torchgeo) and segment (Chesapeake model via smp)
+finetune = ["torchgeo", "segmentation-models-pytorch"]
+
 [build-system]
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
