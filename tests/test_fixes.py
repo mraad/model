@@ -10,6 +10,8 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 import numpy as np
 import torch
@@ -153,6 +155,50 @@ class CheckDataSanityTest(unittest.TestCase):
             check=False,
         )
         self.assertEqual((run.returncode, run.stdout), (0, ""), run.stderr[-2000:])
+
+
+class IntermediatePredictionsTest(unittest.TestCase):
+    def test_closes_every_figure(self):  # E7
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        from box import Box
+
+        from claymodel import callbacks_wandb
+
+        batch = {
+            "pixels": torch.zeros(16, 3, 16, 16),
+            "time": torch.zeros(16, 4),
+            "latlon": torch.zeros(16, 4),
+            "platform": ["linz"] * 16,
+        }
+        meta = Box(
+            {
+                "linz": {
+                    "gsd": 0.5,
+                    "bands": {"wavelength": {"r": 0.6, "g": 0.5, "b": 0.4}},
+                }
+            }
+        )
+        trainer = SimpleNamespace(
+            val_dataloaders=[batch] * 6,
+            datamodule=SimpleNamespace(size=16, metadata=meta),
+        )
+        model = SimpleNamespace(
+            patch_size=8,
+            encoder=lambda cube: (None, None, None, None),
+            decoder=lambda *args: (torch.zeros(16, 4, 3 * 8 * 8), None),
+        )
+        plt.close("all")
+        with (
+            mock.patch.object(callbacks_wandb, "get_wandb_logger"),
+            mock.patch.object(callbacks_wandb.wandb, "Image"),
+        ):
+            callbacks_wandb.LogIntermediatePredictions().on_validation_end(
+                trainer, SimpleNamespace(device="cpu", model=model)
+            )
+        self.assertEqual(plt.get_fignums(), [])
 
 
 class LoadEncoderWeightsTest(unittest.TestCase):

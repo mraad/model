@@ -278,4 +278,4 @@ class LogIntermediatePredictions(L.Callback):
                     axs[3, j].axis("off")
 
                 self.logger.experiment.log({f"{platform}": wandb.Image(fig)})
-            plt.close(fig)
+                plt.close(fig)
