@@ -36,8 +36,18 @@ def write_chips(root, platform, bands, files=2, chips=3, size=16):
 class ConfigTest(unittest.TestCase):
     def test_pretraining_config_parses(self):  # E1
         run = subprocess.run(
-            [sys.executable, "trainer.py", "fit", "--config", "configs/config.yaml", "--print_config"],
-            cwd=ROOT, capture_output=True, text=True,
+            [
+                sys.executable,
+                "trainer.py",
+                "fit",
+                "--config",
+                "configs/config.yaml",
+                "--print_config",
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
         )
         self.assertEqual(run.returncode, 0, run.stderr[-2000:])
 
@@ -50,8 +60,12 @@ class PredictTest(unittest.TestCase):
             write_chips(tmp, "linz", bands=3)
             write_chips(tmp, "naip", bands=4)
             dm = ClayDataModule(
-                data_dir=tmp, size=16, metadata_path=str(ROOT / "configs/metadata.yaml"),
-                platforms=["linz", "naip"], batch_size=4, num_workers=0,
+                data_dir=tmp,
+                size=16,
+                metadata_path=str(ROOT / "configs/metadata.yaml"),
+                platforms=["linz", "naip"],
+                batch_size=4,
+                num_workers=0,
             )
             dm.setup("predict")
             batches = list(dm.predict_dataloader())
@@ -60,7 +74,40 @@ class PredictTest(unittest.TestCase):
             self.assertEqual(len(set(batch["platform"])), 1)
             bands = 3 if batch["platform"][0] == "linz" else 4
             self.assertEqual(tuple(batch["pixels"].shape), (3, bands, 16, 16))
-            self.assertTrue(bool((batch["time"] == 1).all() and (batch["latlon"] == 1).all()))
+            self.assertTrue(
+                bool((batch["time"] == 1).all() and (batch["latlon"] == 1).all())
+            )
+
+
+class LoadEncoderWeightsTest(unittest.TestCase):
+    """E3: a checkpoint without the encoder weights must fail, not train or embed
+    with a random encoder."""
+
+    def test_wrong_checkpoint_raises(self):
+        from claymodel.finetune.embedder.factory import Embedder
+        from claymodel.finetune.segment.factory import Segmentor
+
+        with tempfile.TemporaryDirectory() as tmp:
+            ckpt = Path(tmp) / "wrong.ckpt"
+            torch.save({"state_dict": {"model.decoder.x": torch.zeros(1)}}, ckpt)
+            with self.assertRaisesRegex(ValueError, "265 of 265 encoder parameters"):
+                Embedder(img_size=16, ckpt_path=ckpt)
+            with self.assertRaisesRegex(ValueError, "265 of 265 encoder parameters"):
+                Segmentor(num_classes=2, ckpt_path=ckpt)
+
+    @unittest.skipUnless(CKPT.exists(), f"{CKPT} not downloaded")
+    def test_clay_checkpoint_loads_and_freezes(self):
+        from claymodel.finetune.embedder.factory import Embedder
+
+        encoder = Embedder(img_size=16, ckpt_path=CKPT).clay_encoder
+        sd = torch.load(CKPT, map_location="cpu", mmap=True)["state_dict"]
+        weight = encoder.transformer.layers[0][0].to_qkv.weight
+        self.assertTrue(
+            torch.equal(
+                weight, sd["model.encoder.transformer.layers.0.0.to_qkv.weight"]
+            )
+        )
+        self.assertFalse(any(p.requires_grad for p in encoder.parameters()))
 
 
 if __name__ == "__main__":
