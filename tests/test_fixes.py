@@ -52,6 +52,18 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(run.returncode, 0, run.stderr[-2000:])
 
 
+class PackageImportTest(unittest.TestCase):
+    def test_star_import(self):  # E4
+        run = subprocess.run(
+            [sys.executable, "-c", "from claymodel import *"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(run.returncode, 0, run.stderr[-2000:])
+
+
 class PredictTest(unittest.TestCase):
     def test_predict_batches_one_platform_without_metadata_dropout(self):  # E2
         from claymodel.datamodule import ClayDataModule

@@ -14,13 +14,3 @@ Example usage:
 """
 
 __version__ = "1.5.0"
-
-# Main components available for import
-__all__ = [
-    "ClayMAEModule",
-    "ClayDataModule",
-    "clay_mae_base",
-    "clay_mae_large",
-    "clay_mae_small",
-    "clay_mae_tiny",
-]
