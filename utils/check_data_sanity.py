@@ -1,60 +1,61 @@
+"""Find unreadable or malformed chip .npz files, and optionally delete them.
+
+    python utils/check_data_sanity.py DIR [--chips 128] [--delete] [--workers 24]
+
+Dry run by default: lists invalid files. A file is invalid when it cannot be
+read, has no `pixels` array, or (with --chips) holds another number of chips.
+utils/split_npz.py writes 32-chip files, so pass --chips 32 after splitting.
+"""
+
+import argparse
 import os
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import zipfile
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 
 
-def check_and_delete_npz(file_path):
+def problem(file_path, chips):
+    """Return why the file is invalid, or None when it is valid."""
     try:
-        # Attempt to load the .npz file using numpy
-        data = np.load(file_path)
-
-        # Check if the 'pixel' key exists and has shape 128 in the 0th dimension
-        if "pixels" in data:
-            if data["pixels"].shape[0] != 128:  # noqa: PLR2004
-                os.remove(file_path)
-                return (
-                    None,
-                    f"Invalid shape (not 128 in 0th dim): {file_path} - Deleted",
-                )
-            else:
-                return f"Valid: {file_path}", None
-        else:
-            os.remove(file_path)
-            return None, f"'pixels' key missing: {file_path} - Deleted"
-
-    except Exception as e:
-        os.remove(file_path)
-        return None, f"Invalid (Exception): {file_path} - {str(e)} - Deleted"
+        with np.load(file_path) as data:
+            if "pixels" not in data:
+                return "'pixels' key missing"
+            n = data["pixels"].shape[0]
+    except (OSError, ValueError, EOFError, zipfile.BadZipFile) as e:
+        return f"unreadable: {e}"
+    if chips is not None and n != chips:
+        return f"{n} chips, expected {chips}"
+    return None
 
 
-def process_directory_in_parallel(directory, max_workers=4):
-    invalid_files = []
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = []
-        for root, dirs, files in os.walk(directory):
-            for file in files:
-                if file.endswith(".npz"):
-                    file_path = os.path.join(root, file)
-                    futures.append(executor.submit(check_and_delete_npz, file_path))
+def main():
+    ap = argparse.ArgumentParser(
+        description="Find (and delete) invalid chip .npz files."
+    )
+    ap.add_argument("directory")
+    ap.add_argument("--chips", type=int, help="expected chips per file")
+    ap.add_argument("--delete", action="store_true", help="delete invalid files")
+    ap.add_argument("--workers", type=int, default=24)
+    args = ap.parse_args()
 
-        for future in as_completed(futures):
-            valid_msg, invalid_msg = future.result()
-            if valid_msg:
-                print(valid_msg)
-            if invalid_msg:
-                print(invalid_msg)
-                invalid_files.append(invalid_msg)
+    paths = [
+        os.path.join(root, f)
+        for root, _, files in os.walk(args.directory)
+        for f in files
+        if f.endswith(".npz")
+    ]
+    with ThreadPoolExecutor(max_workers=args.workers) as executor:
+        reasons = executor.map(lambda p: problem(p, args.chips), paths)
+        invalid = [(p, r) for p, r in zip(paths, reasons) if r]
 
-    return invalid_files
+    for path, reason in invalid:
+        if args.delete:
+            os.remove(path)
+        print(f"{'Deleted' if args.delete else 'Invalid'}: {path} ({reason})")
+    print(f"{len(invalid)} of {len(paths)} .npz files invalid", end="")
+    print("; deleted." if args.delete and invalid else ".")
 
 
-# Replace 'your_directory_path' with the path to the directory you want to check
-invalid_files = process_directory_in_parallel("/fsx", max_workers=24)
-
-if invalid_files:
-    print("\nInvalid or corrupted .npz files found and deleted:")
-    for file in invalid_files:
-        print(file)
-else:
-    print("\nAll .npz files are valid and meet the shape criteria for 'pixel' key.")
+if __name__ == "__main__":
+    main()

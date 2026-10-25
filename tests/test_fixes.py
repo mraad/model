@@ -112,6 +112,49 @@ class PredictTest(unittest.TestCase):
             )
 
 
+class CheckDataSanityTest(unittest.TestCase):
+    """E6: dry run by default, keeps split_npz output, deletes only bad files."""
+
+    def run_script(self, *args):
+        return subprocess.run(
+            [sys.executable, "utils/check_data_sanity.py", *args],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+
+    def test_dry_run_then_delete_only_invalid(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            write_chips(tmp, "linz", bands=3, files=1, chips=32)  # split_npz.py output
+            bad = Path(tmp) / "linz/corrupt.npz"
+            bad.write_bytes(b"not a zip")
+            np.savez(Path(tmp) / "linz/nopixels.npz", other=np.zeros(1))
+            files = lambda: sorted(p.name for p in Path(tmp).rglob("*.npz"))
+            everything = files()
+
+            out = self.run_script(tmp, "--chips", "32")
+            self.assertIn("2 of 3 .npz files invalid.", out)
+            self.assertEqual(files(), everything)
+
+            self.run_script(tmp, "--chips", "32", "--delete")
+            self.assertEqual(files(), ["0.npz"])
+
+    def test_import_has_no_side_effects(self):
+        run = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import runpy; runpy.run_path('utils/check_data_sanity.py', run_name='x')",
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual((run.returncode, run.stdout), (0, ""), run.stderr[-2000:])
+
+
 class LoadEncoderWeightsTest(unittest.TestCase):
     """E3: a checkpoint without the encoder weights must fail, not train or embed
     with a random encoder."""
